@@ -8,7 +8,11 @@ run.initialState = function() {
             [],
             []
         ],
-        p: [{
+
+        // these other fields aren't strictly necessary because you
+        // can calculate them from the history, but they're nice to
+        // have
+        p: [{ // player
             available_cards: [true, true, true, true, true, true, true, true, true, true, true, true, true],
             score: 0
         }, {
@@ -19,74 +23,77 @@ run.initialState = function() {
     };
 };
 
-run.hand = function(state, p0, p1, choice0, choice1) {
-
-    var firstTime = true; // only use choice first time
-
+// Play single game (from its current state, even if that's mid-game)
+// to its conclusion.
+run.playSingleGame = function(state, strat0, strat1) {
     while (state.history[0].length < 13) {
-        var c = [
-            firstTime && choice0 !== undefined ? choice0 : p0(state, 0, 1),
-            firstTime && choice1 !== undefined ? choice1 : p1(state, 1, 0)
+        var moves = [
+            strat0(state, 0, 1),
+            strat1(state, 1, 0)
         ];
-
-        firstTime = false;
-
-        if (!state.p[0].available_cards[c[0]]) throw 0 + " can't play " + c[0];
-        if (!state.p[1].available_cards[c[1]]) throw 1 + " can't play " + c[1];
-
-        state.p[0].available_cards[c[0]] = false;
-        state.p[1].available_cards[c[1]] = false;
-
-        if (c[0] != c[1]) {
-            if (c[0] > c[1]) {
-                state.p[0].score++;
-                state.p[0].score += state.tie_score;
-            } else if (c[0] < c[1]) {
-                state.p[1].score++;
-                state.p[1].score += state.tie_score;
-            }
-            state.tie_score = 0;
-        } else {
-            state.tie_score++;
-        }
-
-        state.history[0].push(c[0]);
-        state.history[1].push(c[1]);
+        state = run.makeMove(state, moves);
     }
+    return state;
+};
+
+run.makeMove = function(state, moves) {
+    if (!state.p[0].available_cards[moves[0]]) throw 0 + " can't play " + moves[0];
+    if (!state.p[1].available_cards[moves[1]]) throw 1 + " can't play " + moves[1];
+
+    state.p[0].available_cards[moves[0]] = false;
+    state.p[1].available_cards[moves[1]] = false;
+
+    if (moves[0] != moves[1]) {
+        if (moves[0] > moves[1]) {
+            state.p[0].score++;
+            state.p[0].score += state.tie_score;
+        } else if (moves[0] < moves[1]) {
+            state.p[1].score++;
+            state.p[1].score += state.tie_score;
+        }
+        state.tie_score = 0;
+    } else {
+        state.tie_score++;
+    }
+
+    state.history[0].push(moves[0]);
+    state.history[1].push(moves[1]);
 
     return state;
 };
 
-run.runner = function(s0, name0, s1, name1, trials) {
-
+run.runTrials = function(strat0, strat1, trials) {
     var score = [0, 0];
     var tie = 0;
 
-    var hand;
+    var state;
     for (var i = 0; i < trials; ++i) {
-        hand = run.hand(run.initialState(), s0, s1);
-        if (hand.p[0].score > hand.p[1].score) {
+        // console.log("running trial " + i);
+        state = run.playSingleGame(run.initialState(), strat0, strat1);
+        if (state.p[0].score > state.p[1].score) {
             score[0] ++;
-        } else if (hand.p[0].score < hand.p[1].score) {
+        } else if (state.p[0].score < state.p[1].score) {
             score[1] ++;
         } else {
             tie++;
         }
     }
+
     console.log();
     console.log("### Sample Round ###");
-    u.prettyPrintState(hand);
+    u.prettyPrintState(state);
     console.log();
 
     if (score[0] > score[1]) {
-        console.log("\"" + name0 + "\" won " + score[0] + " to " + score[1] + ", " + tie + " ties.");
+        console.log("\"" + strat0.desc + "\" won " + score[0] + " to " + score[1] + ", " + tie + " ties.");
     } else if (score[1] > score[0]) {
-        console.log("\"" + name1 + "\" won " + score[1] + " to " + score[0] + ", with " + tie + " ties.");
+        console.log("\"" + strat1.desc + "\" won " + score[1] + " to " + score[0] + ", with " + tie + " ties.");
     } else {
         console.log("Tie of " + score[0] + " to " + score[1] + " with " + tie + " ties.");
     }
 };
 
+// all strategies pinky-swear to not modify the state
 var strategy = {};
 
 strategy.random = function(state, me, them) {
@@ -99,14 +106,17 @@ strategy.random = function(state, me, them) {
     }
     throw "Couldn't find available card in " + max_attempts + " attempts.";
 };
+strategy.random.desc = "random";
 
 strategy.up = function(state, me, them) {
     return state.history[0].length;
 };
+strategy.up.desc = "up";
 
 strategy.down = function(state, me, them) {
     return 12 - state.history[0].length;
 };
+strategy.down.desc = "down";
 
 strategy.upOnWin = function(state, me, them) {
     if (state.history[me].length === 0) {
@@ -127,6 +137,7 @@ strategy.upOnWin = function(state, me, them) {
         return strategy.random(state, me, them);
     }
 };
+strategy.upOnWin.desc = "up on win";
 
 strategy.downOnWin = function(state, me, them) {
     if (state.history[me].length === 0) {
@@ -147,51 +158,65 @@ strategy.downOnWin = function(state, me, them) {
         return strategy.random(state, me, them);
     }
 };
+strategy.downOnWin.desc = "down on win";
 
 strategy.highestOnTie = function(state, me, them) {
-    if (state.history[me].length === 0) {
-        return strategy.random(state, me, them);
-    }
-
-    if (!u.wonLast(state.history, me) && !u.lostLast(state.history, me)) {
+    if (u.tiedLast(state.history)) {
         return u.highest(state.p[me].available_cards);
     }
-
     return strategy.random(state, me, them);
 };
+strategy.highestOnTie.desc = "highest on tie";
 
-strategy.monteCarlo = function(state, me, them) {
+strategy.winAllTies = function(state, me, them) {
+    var avail = state.p[me].available_cards;
+    if (u.tiedLast(state.history)) {
+        return u.highest(avail);
+    }
+    return u.lowest(avail);
+};
+strategy.winAllTies.desc = "win all ties";
 
-    var TIMES = 1000;
-    var winningIndex;
-    var winningScore;
+strategy.monteCarlo = function(times, otherStrat) {
+    var mc = function(state, me, them) {
+        var winningCard;
+        var winningScore;
+        var debugScores = [];
 
-    var output = [];
+        for (var card = 0; card < 13; ++card) {
+            if (state.p[me].available_cards[card]) {
 
-    for (var i = 0; i < 13; ++i) {
-        if (state.p[me].available_cards[i]) {
+                var cardScore = 0;
+                for (var t = 0; t < times; ++t) {
+                    // console.log("trial: " + t + ", card: " + card);
 
-            var score = 0;
-            for (var t = 0; t < TIMES; ++t) {
+                    var s = _.cloneDeep(state);
+                    if (me === 0) {
+                        s = run.makeMove(s, [card, otherStrat(s, them, me)]);
+                    } else {
+                        s = run.makeMove(s, [otherStrat(s, them, me), card]);
+                    }
+                    s = run.playSingleGame(s, otherStrat, otherStrat);
 
-                var s = _.cloneDeep(state);
-                var r;
-                if (me === 0) {
-                    r = run.hand(s, strategy.random, strategy.random, i, undefined);
-                } else {
-                    r = run.hand(s, strategy.random, strategy.random, undefined, i);
+                    if (s.p[me].score > s.p[them].score) ++cardScore;
                 }
-                if (s.p[me].score > s.p[them].score) ++score;
-            }
-            output.push(score);
-            if (!winningScore || winningScore < score) {
-                winningScore = score;
-                winningIndex = i;
+
+                if (!winningScore || winningScore < cardScore) {
+                    winningScore = cardScore;
+                    winningCard = card;
+                }
+
+                debugScores.push(cardScore);
+            } else {
+                debugScores.push(-1);
             }
         }
-    }
-    //console.log("scores: " + output);
-    return winningIndex;
+
+        // console.log("scores: " + debugScores);
+        return winningCard;
+    };
+    mc.desc = "monte carlo with " + times + " trials and strategy " + otherStrat.desc;
+    return mc;
 };
 
 var u = {}; // utilities
@@ -210,11 +235,15 @@ u.last = function(arr) {
 };
 
 u.wonLast = function(history, me) {
-    return u.last(history[me]) > u.last(history[u.otherPlayer(me)]);
+    return history[me].length > 0 && u.last(history[me]) > u.last(history[u.otherPlayer(me)]);
 };
 
 u.lostLast = function(history, me) {
-    return u.last(history[me]) < u.last(history[u.otherPlayer(me)]);
+    return history[me].length > 0 && u.last(history[me]) < u.last(history[u.otherPlayer(me)]);
+};
+
+u.tiedLast = function(history) {
+    return history[0].length > 0 && !u.wonLast(history, 0) && !u.lostLast(history, 0);
 };
 
 u.otherPlayer = function(playerId) {
@@ -239,21 +268,35 @@ u.highest = function(arr) {
     for (var i = arr.length; i >= 0; --i) {
         if (arr[i]) return i;
     }
-    return -1; // impossible
+    throw "impossible: no highest";
 };
 
 u.lowest = function(arr) {
     for (var i = 0; i < arr.length; ++i) {
         if (arr[i]) return i;
     }
-    return -1; // impossible
+    throw "impossible: no lowest";
 };
 
 u.prettyPrintState = function(state) {
     var s = _.cloneDeep(state);
     s.p[0].available_cards = u.prettyBoolArray(s.p[0].available_cards);
     s.p[1].available_cards = u.prettyBoolArray(s.p[1].available_cards);
+    s.history[0] = u.prettyHistory(s.history[0]);
+    s.history[1] = u.prettyHistory(s.history[1]);
     console.log(s);
+};
+
+u.prettyHistory = function(hist) {
+    var r = "";
+    for (var i = 0; i < hist.length; ++i) {
+        if (hist[i] >= 10) {
+            r += " " + hist[i] + " ";
+        } else {
+            r += "  " + hist[i] + " ";
+        }
+    }
+    return r;
 };
 
 u.prettyBoolArray = function(arr) {
@@ -317,15 +360,17 @@ test.main = function() {
 };
 
 function main() {
-    run.runner(
-        strategy.random, "random 1",
-        // strategy.up, "up",
-        // strategy.down, "down",
-        // strategy.upOnWin, "up on win",
-        // strategy.downOnWin, "down on win",
-        // strategy.highestOnTie, "highest on tie",
-        strategy.monteCarlo, "monte carlo",
-        1000);
+    run.runTrials(
+        strategy.random,
+        // strategy.up,           /// wins 48%
+        // strategy.down,         /// wins 48%
+        // strategy.upOnWin,      /// wins 48%
+        // strategy.downOnWin,    /// wins 48%
+        // strategy.highestOnTie, /// wins 59%
+        strategy.winAllTies, /// wins 64% consistently
+        // strategy.monteCarlo(100, strategy.random), // wins about 60%, slowly
+        // strategy.monteCarlo(100, strategy.highestOnTie), // wins mid-60% against random
+        100000);
 }
 
 main();

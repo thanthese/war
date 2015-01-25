@@ -1,1 +1,15 @@
-Not ready for prime time. At all. But the Monte Carlo simulation seems to work -- it wins about 64% of the time.
+* Rules of the game
+
+Side note: I don't know what this game is officially called or where it came from. If you do, please let me know!
+
+*Setup* Each player gets all of one suit. They may look at their cards, and hide their hand from their opponent.
+
+*Play* On a signal each player reveals one card. Higher card wins the trick (aces are high). If there's a tie set those cards aside and continue, with the next trick winner taking them all.
+
+*Object* Player who takes the most cards wins.
+
+* Discussion
+
+As with /Rock, Paper, Scissors/, between two human players taking this game seriously it can be an intense psychological struggle. But the real question is: Is it possible to beat someone who's playing completely randomly?
+
+The answer seems to be "yes, but barely". To date the best strategy I've found is to play your lowest card, but play your highest card if you just tied. This strategy beats random 64% of the time -- but of course it wouldn't beat a serious player.
